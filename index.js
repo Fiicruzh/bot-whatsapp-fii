@@ -1,0 +1,358 @@
+const {
+default: makeWASocket,
+useMultiFileAuthState,
+fetchLatestBaileysVersion,
+DisconnectReason
+} = require("@whiskeysockets/baileys")
+
+const P = require("pino")
+
+process.on("uncaughtException", console.error)
+process.on("unhandledRejection", console.error)
+
+let welcomeGroups = new Set()
+let antilinkGroups = new Set()
+let undanganGroups = {}
+
+let pairingPrinted = false
+
+async function startBot() {
+
+const { state, saveCreds } = await useMultiFileAuthState("session")
+const { version } = await fetchLatestBaileysVersion()
+
+const sock = makeWASocket({
+logger: P({ level: "silent" }),
+auth: state,
+version,
+printQRInTerminal: false
+})
+
+sock.ev.on("creds.update", saveCreds)
+
+console.log("🚀 Bot WhatsApp Aktif")
+
+// CONNECTION EVENT
+sock.ev.on("connection.update", async (update) => {
+
+const { connection, lastDisconnect } = update
+
+if (connection === "connecting") {
+console.log("🔄 Menghubungkan ke WhatsApp...")
+}
+
+if (connection === "open") {
+console.log("✅ Bot terhubung (tanpa ulang pairing)")
+pairingPrinted = true
+}
+
+if (connection === "close") {
+
+console.log("❌ Koneksi terputus")
+
+const reason = lastDisconnect?.error?.output?.statusCode
+
+if (reason === DisconnectReason.loggedOut) {
+console.log("⚠️ Session logout! hapus folder session untuk login ulang")
+} else {
+console.log("🔁 Reconnect otomatis...")
+startBot()
+}
+
+}
+
+// AUTO PAIRING FIX
+if (!sock.authState.creds.registered && !pairingPrinted) {
+
+pairingPrinted = true
+
+const phoneNumber = "6287886582175" // GANTI NOMOR
+
+try {
+
+const code = await sock.requestPairingCode(phoneNumber)
+
+console.log("================================")
+console.log("🔐 PAIRING CODE WHATSAPP")
+console.log(code)
+console.log("================================")
+
+} catch (err) {
+
+console.log("❌ Gagal mengambil pairing code:", err)
+
+}
+
+}
+
+})
+
+// WELCOME MEMBER
+sock.ev.on("group-participants.update", async (data) => {
+
+const groupId = data.id
+
+if (data.action === "add" && welcomeGroups.has(groupId)) {
+
+const user = data.participants[0].split("@")[0]
+
+const text = `
+👋 Selamat datang @${user}
+˚ ༘♡ ·˚꒰ ᨰׁׅꫀׁׅܻ݊ᥣׁׅ֪ᝯׁ֒ᨵׁׅׅꩇׁׅ֪݊ ꫀׁׅܻ݊ ꒱ ₊˚ˑ༄
+
+*NIGHTFALL SILENT SLAUGHTER*
+
+Nama:
+Usn:
+Umur:
+Asal:
+Sudah bisa CN / Belum?
+`
+
+await sock.sendMessage(groupId, {
+text: text,
+mentions: [data.participants[0]]
+})
+
+}
+
+})
+
+// MESSAGE EVENT
+sock.ev.on("messages.upsert", async ({ messages }) => {
+
+const msg = messages[0]
+if (!msg.message) return
+
+const text =
+msg.message.conversation ||
+msg.message.extendedTextMessage?.text
+
+if (!text) return
+
+const from = msg.key.remoteJid
+const sender = msg.key.participant || from
+
+// DELAY ANTI SPAM (ANTI BANNED BASIC)
+await new Promise(resolve => setTimeout(resolve, 500))
+
+// CEK ADMIN
+let isAdmin = false
+
+if (from.endsWith("@g.us")) {
+
+const metadata = await sock.groupMetadata(from)
+
+const admins = metadata.participants
+.filter(p => p.admin)
+.map(p => p.id)
+
+isAdmin = admins.includes(sender)
+
+}
+
+// MENU
+if (text === ".menu") {
+
+await sock.sendMessage(from, {
+text: `
+👑 *NSSxFII MENU*
+
+ADMIN:
+.setwelcome
+.setundangan
+.interval
+.stopundangan
+.antilink
+.kick
+
+MEMBER:
+.rules
+`
+})
+
+}
+
+// SET WELCOME
+if (text === ".setwelcome") {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+welcomeGroups.add(from)
+
+await sock.sendMessage(from, {
+text: "✅ Welcome diaktifkan"
+})
+
+}
+
+// RULES
+if (text === ".rules") {
+
+await sock.sendMessage(from, {
+text: `
+📜 *[ RULES NIGHTFALL SILENT SLAUGHTER ]*
+
+*1. WAJIB 17+*
+*2. DILARANG DRAMA SESAMA MEMBER*
+*3. DILARANG MEMBUAT KERIBUTAN DALAM STATUS MENYANDANG NAMA CLAN, MAKA AKAN DIKENAKAN SANKSI*
+*4. DILARANG MENJELEKKAN SESAMA MEMBER DAN ORG LAIN*
+*5. DILARANG KERAS OUT YG DISEBABKAN PACARAN*
+*6. HARUS KOMPAK DAN SALING BERBAUR JANGAN DICUEKIN SESAMA MEMBER*
+*7. ⁠DILARANG NGETAG GRUP KE STATUS KECUALI TENTANG GAME COLAB ATAUPUN JUALAN*
+*8. ⁠WAJIB BISA CN (GANTI NAMA)*
+*9. JAGA NAMA BAIK CLAN*
+*10. DILARANG KERASS BERMUKA DUAA!!*
+*11. ⁠MASUK BAIK BAIK, OUT JUGA HARUS BAIK BAIK DENGAN BILANG DULU KE STAF*
+*12. ⁠DILARANG KERAS UNTUK MENANYAKAN YANG MENYANGKUT HAL PRIBADI KE MEMBER LAINNYA*
+*13. JAGA SOPAN SANTUN SESAMA MEMBER ATAU PUN STAFF*
+*14. YANG SUDAH OUT TIDA BISA JOIN LAGI DENGAN ALASAN APAPUN ITU*
+LINK DISCORD : https://discord.gg/JuAq2NBf6
+LINK VARCITY : https://www.roblox.com/share?code=4e879bb8c0113d429e2b3381537c0e5f&type=AvatarItemDetails
+`
+})
+
+}
+
+// ANTILINK
+if (text === ".antilink") {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+antilinkGroups.add(from)
+
+await sock.sendMessage(from, {
+text: "🚫 Anti link aktif"
+})
+
+}
+
+// DETEKSI LINK
+if (antilinkGroups.has(from)) {
+
+if (text.includes("https://chat.whatsapp.com")) {
+
+await sock.sendMessage(from, {
+text: "🚫 Link grup dilarang!"
+})
+
+}
+
+}
+
+// KICK
+if (text.startsWith(".kick")) {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+if (!msg.message.extendedTextMessage) return
+
+const mentioned =
+msg.message.extendedTextMessage.contextInfo?.mentionedJid
+
+if (!mentioned) return
+
+await sock.groupParticipantsUpdate(from, mentioned, "remove")
+
+}
+
+// SET UNDANGAN
+if (text.startsWith(".setundangan")) {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+const pesan = text.replace(".setundangan","").trim()
+
+if (!pesan)
+return sock.sendMessage(from,{
+text:"Contoh:\n.setundangan Ayo join clan NIGHTFALL"
+})
+
+undanganGroups[from] = {
+text: pesan,
+timer: null
+}
+
+await sock.sendMessage(from,{
+text:"✅ Pesan undangan disimpan\nGunakan .interval untuk memulai"
+})
+
+}
+
+// INTERVAL
+if (text.startsWith(".interval")) {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+if (!undanganGroups[from])
+return sock.sendMessage(from,{text:"⚠️ Gunakan .setundangan dulu"})
+
+const waktu = text.split(" ")[1]
+
+let ms = 0
+
+if (waktu === "1menit") ms = 60000
+if (waktu === "2menit") ms = 120000
+if (waktu === "3menit") ms = 180000
+if (waktu === "4menit") ms = 240000
+if (waktu === "5menit") ms = 300000
+if (waktu === "6menit") ms = 360000
+if (waktu === "7menit") ms = 420000
+if (waktu === "8menit") ms = 480000
+if (waktu === "9menit") ms = 540000
+if (waktu === "10menit") ms = 600000
+if (waktu === "30menit") ms = 1800000
+if (waktu === "1jam") ms = 3600000
+if (waktu === "2jam") ms = 7200000
+
+if (!ms)
+return sock.sendMessage(from,{
+text:"Gunakan:\n.interval 30menit\n.interval 1jam\n.interval 2jam"
+})
+
+if (undanganGroups[from].timer)
+clearInterval(undanganGroups[from].timer)
+
+undanganGroups[from].timer = setInterval(async () => {
+
+await sock.sendMessage(from,{
+text: undanganGroups[from].text
+})
+
+}, ms)
+
+await sock.sendMessage(from,{
+text:`✅ Undangan otomatis aktif setiap ${waktu}`
+})
+
+}
+
+// STOP UNDANGAN
+if (text === ".stopundangan") {
+
+if (!isAdmin)
+return sock.sendMessage(from,{text:"❌ Hanya admin yang bisa pakai command ini"})
+
+if (!undanganGroups[from])
+return sock.sendMessage(from,{text:"⚠️ Undangan belum aktif"})
+
+clearInterval(undanganGroups[from].timer)
+
+delete undanganGroups[from]
+
+await sock.sendMessage(from,{
+text:"🛑 Undangan otomatis dihentikan"
+})
+
+}
+
+})
+
+}
+
+startBot()

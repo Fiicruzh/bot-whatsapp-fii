@@ -7,9 +7,6 @@ DisconnectReason
 
 const P = require("pino")
 
-process.on("uncaughtException", console.error)
-process.on("unhandledRejection", console.error)
-
 let welcomeGroups = new Set()
 let antilinkGroups = new Set()
 let undanganGroups = {}
@@ -30,58 +27,57 @@ printQRInTerminal: false
 
 sock.ev.on("creds.update", saveCreds)
 
-console.log("🚀 Bot WhatsApp Aktif")
+console.log("Bot WhatsApp Aktif")
 
 // CONNECTION EVENT
 sock.ev.on("connection.update", async (update) => {
 
-const { connection, lastDisconnect } = update
+const { connection, qr, lastDisconnect } = update
 
 if (connection === "connecting") {
-console.log("🔄 Menghubungkan ke WhatsApp...")
+console.log("Menghubungkan ke WhatsApp...")
 }
 
 if (connection === "open") {
-console.log("✅ Bot terhubung (tanpa ulang pairing)")
-pairingPrinted = true
+console.log("✅ Bot terhubung")
 }
 
 if (connection === "close") {
 
-console.log("❌ Koneksi terputus")
+console.log("Koneksi terputus")
 
-const reason = lastDisconnect?.error?.output?.statusCode
+const shouldReconnect =
+lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
 
-if (reason === DisconnectReason.loggedOut) {
-console.log("⚠️ Session logout! hapus folder session untuk login ulang")
-} else {
-console.log("🔁 Reconnect otomatis...")
-startBot()
-}
+if (shouldReconnect) startBot()
 
 }
 
-// AUTO PAIRING FIX
-if (!sock.authState.creds.registered && !pairingPrinted) {
+// PAIRING CODE
+if (qr && !sock.authState.creds.registered && !pairingPrinted) {
 
 pairingPrinted = true
 
 const phoneNumber = "6287886582175" // GANTI NOMOR
+
+setTimeout(async () => {
 
 try {
 
 const code = await sock.requestPairingCode(phoneNumber)
 
 console.log("================================")
-console.log("🔐 PAIRING CODE WHATSAPP")
+console.log("PAIRING CODE WHATSAPP")
 console.log(code)
 console.log("================================")
 
 } catch (err) {
 
-console.log("❌ Gagal mengambil pairing code:", err)
+console.log("Gagal mengambil pairing code")
 
 }
+
+}, 5000)
 
 }
 
@@ -132,9 +128,6 @@ if (!text) return
 
 const from = msg.key.remoteJid
 const sender = msg.key.participant || from
-
-// DELAY ANTI SPAM (ANTI BANNED BASIC)
-await new Promise(resolve => setTimeout(resolve, 500))
 
 // CEK ADMIN
 let isAdmin = false
